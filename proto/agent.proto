@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+package portside;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Portside Agent Protocol
+// Bidirectional gRPC stream between control plane and worker agents.
+// One stream per agent carries heartbeats UP and commands DOWN.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service ControlPlane {
+  // Agent registers its node name and resource capacity on startup.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Bidirectional stream: agent sends heartbeats, control plane sends commands.
+  rpc Heartbeat(stream HeartbeatRequest) returns (stream Command);
+
+  // Agent reports the full list of containers it is running (used on CP restart).
+  rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registration
+// ─────────────────────────────────────────────────────────────────────────────
+
+message RegisterRequest {
+  string node_name    = 1;
+  int32  cpu_capacity = 2;  // millicores (e.g. 2000 = 2 CPUs)
+  int32  mem_capacity = 3;  // MiB
+}
+
+message RegisterResponse {
+  bool   accepted = 1;
+  string message  = 2;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Heartbeats (agent → control plane)
+// ─────────────────────────────────────────────────────────────────────────────
+
+message HeartbeatRequest {
+  string                  node_name  = 1;
+  repeated ContainerStatus containers = 2;
+  Resources               used       = 3;
+}
+
+message ContainerStatus {
+  string replica_id    = 1;
+  string state         = 2;  // running | exited | unhealthy | starting
+  int32  exit_code     = 3;
+  bool   health_check  = 4;  // true if passing health checks
+  int32  restart_count = 5;
+}
+
+message Resources {
+  int32 cpu_used = 1;  // millicores
+  int32 mem_used = 2;  // MiB
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Commands (control plane → agent)
+// ─────────────────────────────────────────────────────────────────────────────
+
+message Command {
+  oneof kind {
+    StartContainer start = 1;
+    StopContainer  stop  = 2;
+  }
+}
+
+message StartContainer {
+  string            replica_id    = 1;
+  string            image         = 2;
+  int32             cpu_request   = 3;  // millicores
+  int32             mem_request   = 4;  // MiB
+  repeated PortMap  ports         = 5;
+  repeated EnvVar   env           = 6;
+  string            health_path   = 7;  // e.g. "/healthz"
+  int32             health_port   = 8;
+  int32             health_interval_ms = 9;
+}
+
+message StopContainer {
+  string replica_id    = 1;
+  int32  grace_seconds = 2;
+}
+
+message PortMap {
+  int32 container_port = 1;
+  int32 host_port      = 2;
+}
+
+message EnvVar {
+  string key   = 1;
+  string value = 2;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ListContainers (used on control plane restart)
+// ─────────────────────────────────────────────────────────────────────────────
+
+message ListContainersRequest {
+  string node_name = 1;
+}
+
+message ListContainersResponse {
+  repeated ContainerStatus containers = 1;
+}

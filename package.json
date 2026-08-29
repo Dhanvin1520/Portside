@@ -1,0 +1,39 @@
+{
+  "name": "portside",
+  "version": "1.0.0",
+  "description": "A Kubernetes-inspired container orchestrator built in TypeScript with gRPC-based control plane, resource-aware scheduling, rolling deployments, and chaos-tested resilience.",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "proto",
+    "control-plane",
+    "agent",
+    "proxy",
+    "cli",
+    "dashboard",
+    "tests"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace=@portside/shared",
+    "build:cp": "npm run build --workspace=@portside/control-plane",
+    "build:agent": "npm run build --workspace=@portside/agent",
+    "build:proxy": "npm run build --workspace=@portside/proxy",
+    "build:cli": "npm run build --workspace=@portside/cli",
+    "build:dashboard": "npm run build --workspace=@portside/dashboard",
+    "build": "npm run build:shared && npm run build:cp && npm run build:agent && npm run build:proxy && npm run build:cli && npm run build:dashboard",
+    "test": "npm run test:unit",
+    "test:unit": "cd tests && npx vitest run --config vitest.unit.config.ts",
+    "test:property": "cd tests && npx vitest run --config vitest.unit.config.ts property/",
+    "chaos": "cd tests && npx tsx chaos/chaos.ts",
+    "clean": "rm -rf node_modules dist coverage data/*.db"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0",
+    "tsx": "^4.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

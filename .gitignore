@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.js.map
+*.d.ts
+!jest.config.d.ts
+.env
+data/*.db
+data/*.sqlite
+coverage/
+.DS_Store
+*.log
+tmp/

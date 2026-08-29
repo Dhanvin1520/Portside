@@ -1,0 +1,10 @@
+{
+  "name": "@portside/proto",
+  "version": "1.0.0",
+  "description": "gRPC protocol buffers for Portside agent communication",
+  "main": "generated/agent.ts",
+  "scripts": {
+    "generate": "echo 'Proto types are defined in shared/src/types.ts — no codegen needed for JS-native gRPC'",
+    "build": "echo 'Proto package is definition-only'"
+  }
+}
