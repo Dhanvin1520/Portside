@@ -1,0 +1,25 @@
+{
+  "name": "@portside/cli",
+  "version": "1.0.0",
+  "description": "portctl — CLI for Portside container orchestrator",
+  "main": "src/index.ts",
+  "bin": {
+    "portctl": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@portside/shared": "*",
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "cli-table3": "^0.6.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0"
+  }
+}
