@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  registry:
+    image: registry:2
+    ports:
+      - "5001:5000"
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    networks:
+      - portside-net
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: control-plane/Dockerfile
+    ports:
+      - "7000:7000"
+      - "7001:7001"
+    volumes:
+      - ./data:/data
+    environment:
+      - REST_PORT=7000
+      - GRPC_PORT=7001
+      - DATA_DIR=/data
+      - LOG_LEVEL=info
+    networks:
+      - portside-net
+
+  proxy:
+    build:
+      context: .
+      dockerfile: proxy/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PROXY_PORT=8080
+      - CONTROL_PLANE_API=http://control-plane:7000
+    depends_on:
+      - control-plane
+    networks:
+      - portside-net
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - DASHBOARD_PORT=3000
+      - CONTROL_PLANE_API=http://control-plane:7000
+    depends_on:
+      - control-plane
+    networks:
+      - portside-net
+
+  node-1: &worker
+    build:
+      context: .
+      dockerfile: agent/Dockerfile
+    privileged: true
+    environment:
+      - NODE_NAME=node-1
+      - CONTROL_PLANE=control-plane:7001
+      - CPU=2000
+      - MEMORY=2048
+    depends_on:
+      - control-plane
+    networks:
+      - portside-net
+
+  node-2:
+    <<: *worker
+    environment:
+      - NODE_NAME=node-2
+      - CONTROL_PLANE=control-plane:7001
+      - CPU=2000
+      - MEMORY=2048
+
+  node-3:
+    <<: *worker
+    environment:
+      - NODE_NAME=node-3
+      - CONTROL_PLANE=control-plane:7001
+      - CPU=2000
+      - MEMORY=2048
+
+networks:
+  portside-net:
+    driver: bridge
