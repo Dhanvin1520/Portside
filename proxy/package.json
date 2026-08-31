@@ -1,0 +1,21 @@
+{
+  "name": "@portside/proxy",
+  "version": "1.0.0",
+  "description": "Portside service proxy: round-robin load balancer across healthy replicas",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@portside/shared": "*",
+    "http-proxy": "^1.18.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.0",
+    "@types/http-proxy": "^1.17.14",
+    "tsx": "^4.7.0"
+  }
+}
