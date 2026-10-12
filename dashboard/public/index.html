@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portside Orchestrator — Cluster Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(22, 29, 47, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-hover: rgba(30, 41, 66, 0.9);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-glow: rgba(56, 189, 248, 0.25);
+      --success: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.25);
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --danger-glow: rgba(239, 68, 68, 0.25);
+      --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.08) 0px, transparent 50%);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    header {
+      border-bottom: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      background: rgba(11, 15, 25, 0.8);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #0ea5e9, #6366f1);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: white;
+      box-shadow: 0 0 15px var(--primary-glow);
+    }
+
+    .brand-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-badge {
+      font-size: 0.7rem;
+      font-family: var(--font-mono);
+      padding: 0.2rem 0.5rem;
+      border-radius: 9999px;
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--primary);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .btn {
+      font-family: var(--font-sans);
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .btn-primary {
+      background: #0284c7;
+      color: white;
+      box-shadow: 0 4px 12px var(--primary-glow);
+    }
+
+    .btn-primary:hover {
+      background: #0369a1;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--card-border);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .live-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--success);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--success-glow);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    main {
+      flex: 1;
+      padding: 2rem;
+      max-width: 1440px;
+      margin: 0 auto;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    /* Metric Cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(16px);
+      border-radius: 14px;
+      padding: 1.25rem;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .metric-card:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .metric-label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .metric-value {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: var(--text-main);
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+    }
+
+    .metric-sub {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* Section Styles */
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Nodes Grid */
+    .nodes-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .node-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(16px);
+      border-radius: 14px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .node-name {
+      font-weight: 700;
+      font-size: 1rem;
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .status-badge {
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+    }
+
+    .status-Ready {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .status-NotReady {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .status-Draining {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--warning);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .resource-bar-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .progress-bar-bg {
+      height: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 9999px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, #38bdf8, #6366f1);
+      transition: width 0.4s ease;
+    }
+
+    /* Tables */
+    .table-container {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(16px);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.85rem;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.02);
+      padding: 0.85rem 1.25rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    td {
+      padding: 0.9rem 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+    }
+
+    /* Events List */
+    .events-stream {
+      max-height: 320px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 1rem;
+    }
+
+    .event-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      font-size: 0.8rem;
+      padding: 0.6rem 0.8rem;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 8px;
+      border-left: 3px solid var(--primary);
+      font-family: var(--font-mono);
+    }
+
+    .event-item.Crashed, .event-item.NodeNotReady {
+      border-left-color: var(--danger);
+      background: rgba(239, 68, 68, 0.04);
+    }
+
+    .event-item.Ready, .event-item.RolloutCompleted {
+      border-left-color: var(--success);
+    }
+
+    .event-time {
+      color: var(--text-muted);
+      min-width: 75px;
+    }
+
+    .event-kind {
+      font-weight: 700;
+      min-width: 120px;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      display: none;
+      place-items: center;
+      z-index: 100;
+    }
+
+    .modal {
+      background: #111827;
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      width: 90%;
+      max-width: 600px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    }
+
+    textarea {
+      width: 100%;
+      height: 250px;
+      background: #030712;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      color: #38bdf8;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      padding: 1rem;
+      resize: vertical;
+      outline: none;
+    }
+
+    textarea:focus {
+      border-color: var(--primary);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-logo">P</div>
+      <div>
+        <div class="brand-title">Portside Orchestrator</div>
+        <div style="font-size: 0.75rem; color: var(--text-muted);">Distributed Container Control Plane</div>
+      </div>
+      <span class="brand-badge">v1.0.0</span>
+    </div>
+
+    <div class="header-actions">
+      <div class="live-indicator">
+        <span class="live-dot"></span>
+        <span id="cluster-sync-status">SYNCED</span>
+      </div>
+      <button class="btn btn-secondary" onclick="fetchClusterState()">↻ Refresh</button>
+      <button class="btn btn-primary" onclick="openApplyModal()">+ Apply Spec</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Cluster Summary Metrics -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Ready Nodes</div>
+        <div class="metric-value" id="val-nodes">0<span class="metric-sub">/ 0 total</span></div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Active Replicas</div>
+        <div class="metric-value" id="val-replicas">0<span class="metric-sub" id="val-ready-replicas">0 ready</span></div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Active Deployments</div>
+        <div class="metric-value" id="val-deployments">0</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Cluster CPU Allocated</div>
+        <div class="metric-value" id="val-cpu">0%</div>
+      </div>
+    </div>
+
+    <!-- Cluster Nodes -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Cluster Nodes (DIND Workers)</h2>
+      </div>
+      <div class="nodes-grid" id="nodes-container">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+
+    <!-- Deployments & Rollouts -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Active Deployments & Rolling Updates</h2>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Deployment</th>
+              <th>Replicas (Ready/Desired)</th>
+              <th>Revision</th>
+              <th>Rollout Strategy</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="deployments-tbody">
+            <!-- Rendered via JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Replicas Detailed Table -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Replicas (Containers)</h2>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Replica ID</th>
+              <th>Deployment</th>
+              <th>Assigned Node</th>
+              <th>State</th>
+              <th>Health Check</th>
+              <th>Restarts</th>
+              <th>Port</th>
+              <th>Rev</th>
+            </tr>
+          </thead>
+          <tbody id="replicas-tbody">
+            <!-- Rendered via JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Event Timeline -->
+    <section>
+      <div class="section-header">
+        <h2 class="section-title">Cluster Event Stream (Audit Log)</h2>
+      </div>
+      <div class="table-container">
+        <div class="events-stream" id="events-container">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Apply YAML Modal -->
+  <div class="modal-backdrop" id="apply-modal">
+    <div class="modal">
+      <h3 style="font-size: 1.1rem; font-weight: 700;">Apply Declarative Spec (YAML)</h3>
+      <textarea id="yaml-input" placeholder="apiVersion: portside/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    spec:
+      containers:
+        - name: web
+          image: hashicorp/http-echo
+          ports:
+            - containerPort: 5678"></textarea>
+      <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+        <button class="btn btn-secondary" onclick="closeApplyModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitApplySpec()">Apply Specification</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '/api';
+
+    async function fetchClusterState() {
+      try {
+        const [nodesRes, depsRes, repsRes, evtsRes] = await Promise.all([
+          fetch(`${API_BASE}/v1/nodes`),
+          fetch(`${API_BASE}/v1/deployments`),
+          fetch(`${API_BASE}/v1/replicas`),
+          fetch(`${API_BASE}/v1/events?limit=25`)
+        ]);
+
+        const nodes = await nodesRes.json();
+        const deps = await depsRes.json();
+        const reps = await repsRes.json();
+        const evts = await evtsRes.json();
+
+        renderSummary(nodes, deps, reps);
+        renderNodes(nodes);
+        renderDeployments(deps);
+        renderReplicas(reps);
+        renderEvents(evts);
+
+        document.getElementById('cluster-sync-status').textContent = 'SYNCED';
+      } catch (err) {
+        document.getElementById('cluster-sync-status').textContent = 'OFFLINE';
+      }
+    }
+
+    function renderSummary(nodes, deps, reps) {
+      const readyNodes = nodes.filter(n => n.status === 'Ready').length;
+      document.getElementById('val-nodes').innerHTML = `${readyNodes}<span class="metric-sub">/ ${nodes.length} total</span>`;
+
+      const readyReps = reps.filter(r => r.ready).length;
+      document.getElementById('val-replicas').innerHTML = `${reps.length}<span class="metric-sub">${readyReps} healthy</span>`;
+
+      document.getElementById('val-deployments').textContent = deps.length;
+
+      let totalCpu = 0;
+      let allocCpu = 0;
+      nodes.forEach(n => {
+        totalCpu += n.cpuCapacity || 0;
+        allocCpu += n.cpuAllocated || 0;
+      });
+      const pct = totalCpu > 0 ? ((allocCpu / totalCpu) * 100).toFixed(1) : 0;
+      document.getElementById('val-cpu').textContent = `${pct}%`;
+    }
+
+    function renderNodes(nodes) {
+      const container = document.getElementById('nodes-container');
+      container.innerHTML = nodes.map(n => {
+        const cpuPct = n.cpuCapacity > 0 ? (n.cpuAllocated / n.cpuCapacity) * 100 : 0;
+        const memPct = n.memCapacity > 0 ? (n.memAllocated / n.memCapacity) * 100 : 0;
+        return `
+          <div class="node-card">
+            <div class="node-header">
+              <span class="node-name">⚙ ${n.name}</span>
+              <span class="status-badge status-${n.status}">${n.status}</span>
+            </div>
+            <div class="resource-bar-group">
+              <div class="bar-label">
+                <span>CPU: ${n.cpuAllocated}/${n.cpuCapacity}m</span>
+                <span>${cpuPct.toFixed(0)}%</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill" style="width: ${Math.min(100, cpuPct)}%"></div>
+              </div>
+            </div>
+            <div class="resource-bar-group">
+              <div class="bar-label">
+                <span>Memory: ${n.memAllocated}/${n.memCapacity}Mi</span>
+                <span>${memPct.toFixed(0)}%</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill" style="width: ${Math.min(100, memPct)}%; background: linear-gradient(90deg, #10b981, #06b6d4);"></div>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted);">
+              <span>Replicas: <b>${n.replicaCount || 0}</b></span>
+              ${n.status === 'Ready' ? `<button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="drainNode('${n.name}')">Drain</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('') || '<div style="color: var(--text-muted); font-size: 0.9rem;">No nodes registered yet. Start agent containers to join cluster.</div>';
+    }
+
+    function renderDeployments(deps) {
+      const tbody = document.getElementById('deployments-tbody');
+      tbody.innerHTML = deps.map(d => `
+        <tr>
+          <td class="mono" style="font-weight: 700; color: var(--primary);">${d.name}</td>
+          <td><b>${d.readyReplicas}</b> / ${d.desiredReplicas}</td>
+          <td class="mono">rev-${d.currentRevision}</td>
+          <td style="color: var(--text-muted);">maxSurge: ${d.strategy.maxSurge}, maxUnavailable: ${d.strategy.maxUnavailable}</td>
+          <td>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="scaleDeployment('${d.name}', ${d.desiredReplicas + 1})">+ Scale</button>
+              <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="rollbackDeployment('${d.name}')">Rollback</button>
+            </div>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No deployments applied yet.</td></tr>';
+    }
+
+    function renderReplicas(reps) {
+      const tbody = document.getElementById('replicas-tbody');
+      tbody.innerHTML = reps.map(r => {
+        const isHealthy = r.ready;
+        return `
+          <tr>
+            <td class="mono" style="font-weight: 600;">${r.id}</td>
+            <td class="mono">${r.deploymentName}</td>
+            <td class="mono">${r.node || '-'}</td>
+            <td><span class="status-badge" style="background: rgba(255,255,255,0.06); color: ${r.ready ? '#10b981' : '#f59e0b'}">${r.state}</span></td>
+            <td>${isHealthy ? '<span style="color: #10b981;">● Passed</span>' : '<span style="color: #ef4444;">○ Waiting</span>'}</td>
+            <td class="mono">${r.restartCount}</td>
+            <td class="mono">${r.hostPort || '-'}</td>
+            <td class="mono">${r.revision}</td>
+          </tr>
+        `;
+      }).join('') || '<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No active containers.</td></tr>';
+    }
+
+    function renderEvents(events) {
+      const container = document.getElementById('events-container');
+      container.innerHTML = events.map(e => `
+        <div class="event-item ${e.kind}">
+          <span class="event-time">${new Date(e.time).toLocaleTimeString()}</span>
+          <span class="event-kind">${e.kind}</span>
+          <span style="color: var(--primary);">${e.object}</span>
+          <span style="color: var(--text-muted); flex: 1;">${e.message}</span>
+        </div>
+      `).join('') || '<div style="color: var(--text-muted);">No events recorded yet.</div>';
+    }
+
+    async function drainNode(name) {
+      if (!confirm(`Are you sure you want to drain node ${name}? Replicas will be rescheduled.`)) return;
+      await fetch(`${API_BASE}/v1/nodes/${name}/drain`, { method: 'POST' });
+      fetchClusterState();
+    }
+
+    async function scaleDeployment(name, replicas) {
+      const count = prompt(`Set target replicas for ${name}:`, replicas);
+      if (count === null) return;
+      await fetch(`${API_BASE}/v1/deployments/${name}/scale`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ replicas: parseInt(count, 10) })
+      });
+      fetchClusterState();
+    }
+
+    async function rollbackDeployment(name) {
+      if (!confirm(`Rollback deployment ${name} to previous revision?`)) return;
+      await fetch(`${API_BASE}/v1/deployments/${name}/rollback`, { method: 'POST' });
+      fetchClusterState();
+    }
+
+    function openApplyModal() {
+      document.getElementById('apply-modal').style.display = 'grid';
+    }
+
+    function closeApplyModal() {
+      document.getElementById('apply-modal').style.display = 'none';
+    }
+
+    async function submitApplySpec() {
+      const yaml = document.getElementById('yaml-input').value;
+      if (!yaml.trim()) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/v1/apply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-yaml' },
+          body: yaml
+        });
+        const data = await res.json();
+        if (!res.ok) alert(`Apply error: ${data.error}`);
+        else {
+          closeApplyModal();
+          fetchClusterState();
+        }
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    fetchClusterState();
+    setInterval(fetchClusterState, 2000);
+  </script>
+</body>
+</html>
