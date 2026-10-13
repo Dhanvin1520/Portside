@@ -1,0 +1,23 @@
+{
+  "name": "@portside/tests",
+  "version": "1.0.0",
+  "description": "Comprehensive test suite and chaos engineering framework for Portside",
+  "scripts": {
+    "build": "echo 'Tests package has no build step'",
+    "test": "vitest run",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
+    "test:property": "vitest run --config vitest.unit.config.ts tests/property",
+    "chaos": "tsx chaos/chaos.ts"
+  },
+  "dependencies": {
+    "@portside/shared": "*",
+    "@portside/control-plane": "*",
+    "fast-check": "^3.15.1"
+  },
+  "devDependencies": {
+    "vitest": "^1.2.0",
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0"
+  }
+}
