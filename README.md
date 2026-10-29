@@ -39,6 +39,22 @@ graph TD
 
 ---
 
+## 📂 Repository Structure
+
+```
+├── agent/            # Node agent managing local Docker containers via Dockerode
+├── cli/              # portctl CLI tool (apply, get, scale, rollout, drain)
+├── control-plane/    # Central orchestrator: scheduler, reconciler, REST API, SQLite
+├── dashboard/        # Web UI for real-time cluster visualization
+├── examples/         # Sample multi-replica application deployment YAMLs
+├── proto/            # gRPC protocol buffer definitions (agent.proto)
+├── proxy/            # Health-aware reverse proxy & round-robin load balancer
+├── shared/           # Shared types, logging utilities, and declarative YAML parser
+└── tests/            # Vitest unit tests, fast-check property verification, chaos harness
+```
+
+---
+
 ## 📊 Chaos Engineering & Non-Functional Benchmarks
 
 Every metric is measured across repeated runs via `npm run chaos` (`tests/chaos/chaos.ts`) on a 3-node cluster:
