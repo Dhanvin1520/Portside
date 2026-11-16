@@ -50,6 +50,10 @@ message ContainerStatus {
   int32  exit_code     = 3;
   bool   health_check  = 4;  // true if passing health checks
   int32  restart_count = 5;
+  // Placement generation of this container instance (fencing token).
+  // Echoed back from StartContainer.generation so the control plane can
+  // ignore reports about an older instance of the same replica.
+  int32  generation    = 6;
 }
 
 message Resources {
@@ -78,6 +82,8 @@ message StartContainer {
   string            health_path   = 7;  // e.g. "/healthz"
   int32             health_port   = 8;
   int32             health_interval_ms = 9;
+  int32             generation    = 10; // bumped on every placement / restart
+  repeated string   args          = 11; // container command arguments
 }
 
 message StopContainer {

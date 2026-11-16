@@ -19,7 +19,9 @@ spec:
     spec:
       containers:
         - name: web
-          image: hashicorp/http-echo:latest
+          image: hashicorp/http-echo:0.2.3
+          # http-echo exits immediately without -text.
+          args: ["-text=portside v1", "-listen=:5678"]
           resources:
             requests:
               cpu: 100m

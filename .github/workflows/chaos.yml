@@ -1,0 +1,55 @@
+name: Portside Chaos (live cluster)
+
+# Boots the real 3-node docker-compose cluster on a GitHub runner and runs the
+# chaos harness against it. Started manually from the Actions tab because it
+# takes several minutes. Results are uploaded as a build artifact.
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Iterations per timing scenario'
+        required: false
+        default: '5'
+
+jobs:
+  chaos:
+    name: Chaos harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Start cluster
+        run: docker compose up -d --build
+
+      - name: Run chaos harness
+        env:
+          CHAOS_ITERATIONS: ${{ github.event.inputs.iterations }}
+        run: npm run chaos
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-results
+          path: tests/chaos/results/
+          if-no-files-found: ignore
+
+      - name: Cluster logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=300
+
+      - name: Stop cluster
+        if: always()
+        run: docker compose down -v

@@ -16,6 +16,7 @@ import Table from 'cli-table3';
 //   portctl scale <name> --replicas N   Scale a deployment
 //   portctl rollout undo <name>         Roll back a deployment
 //   portctl drain <node>                Drain a node
+//   portctl uncordon <node>             Make a drained node schedulable again
 //   portctl describe <name>             Show deployment details and events
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -221,6 +222,24 @@ program
         method: 'POST',
       });
 
+      const data = (await res.json()) as any;
+      if (!res.ok) {
+        console.error(chalk.red(`Error: ${data.error}`));
+        process.exit(1);
+      }
+      console.log(chalk.green(data.message));
+    } catch (err) {
+      console.error(chalk.red(`Failed: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  });
+
+program
+  .command('uncordon <node>')
+  .description('Make a drained node schedulable again')
+  .action(async (node) => {
+    try {
+      const res = await fetch(`${API_BASE}/v1/nodes/${node}/uncordon`, { method: 'POST' });
       const data = (await res.json()) as any;
       if (!res.ok) {
         console.error(chalk.red(`Error: ${data.error}`));
