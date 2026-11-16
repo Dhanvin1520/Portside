@@ -6,7 +6,8 @@
     "build": "echo 'Tests package has no build step'",
     "test": "vitest run",
     "test:unit": "vitest run --config vitest.unit.config.ts",
-    "test:property": "vitest run --config vitest.unit.config.ts tests/property",
+    "test:property": "vitest run --config vitest.unit.config.ts property/",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "chaos": "tsx chaos/chaos.ts"
   },
   "dependencies": {

@@ -34,7 +34,11 @@ async function main(): Promise<void> {
   // Initialize subsystems
   const db = new StateDB(`${DATA_DIR}/portside.db`);
   const scheduler = new Scheduler(db);
-  const reconciler = new Reconciler(db, scheduler);
+  // Give agents time to reconnect after a control plane restart before any
+  // node can be declared dead (see ReconcilerOptions.startupGraceMs).
+  const reconciler = new Reconciler(db, scheduler, {
+    startupGraceMs: parseInt(process.env.STARTUP_GRACE_MS || '5000', 10),
+  });
   const grpcServer = new GrpcServer(db, reconciler, GRPC_PORT);
   const app = createRestApi(db, reconciler, scheduler);
 

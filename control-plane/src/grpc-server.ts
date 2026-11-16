@@ -20,6 +20,8 @@ const PROTO_PATH = path.resolve(__dirname, '../../proto/agent.proto');
 
 export class GrpcServer {
   private server: grpc.Server;
+  /** Port actually bound (useful when constructed with port 0). */
+  boundPort = 0;
   private agentStreams: Map<string, grpc.ServerDuplexStream<any, any>> = new Map();
   private commandPollInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -52,13 +54,14 @@ export class GrpcServer {
       this.server.bindAsync(
         `0.0.0.0:${this.port}`,
         grpc.ServerCredentials.createInsecure(),
-        (err) => {
+        (err, boundPort) => {
           if (err) {
             log.error('gRPC server failed to bind', { error: err.message });
             reject(err);
             return;
           }
-          log.info('gRPC server started', { port: this.port });
+          this.boundPort = boundPort;
+          log.info('gRPC server started', { port: boundPort });
 
           // Poll for commands to send to agents
           this.commandPollInterval = setInterval(() => {
@@ -75,6 +78,7 @@ export class GrpcServer {
     if (this.commandPollInterval) {
       clearInterval(this.commandPollInterval);
     }
+    this.agentStreams.clear();
     this.server.forceShutdown();
     log.info('gRPC server stopped');
   }
@@ -86,20 +90,33 @@ export class GrpcServer {
     callback: grpc.sendUnaryData<any>
   ): void {
     const { nodeName, cpuCapacity, memCapacity } = call.request;
-    log.info('Agent registering', { node: nodeName, cpu: cpuCapacity, mem: memCapacity });
+    if (!nodeName) {
+      callback(null, { accepted: false, message: 'node_name is required' });
+      return;
+    }
+    const existing = this.db.getNode(nodeName);
+    log.info('Agent registering', {
+      node: nodeName, cpu: cpuCapacity, mem: memCapacity, rejoin: !!existing,
+    });
 
+    // A node re-registers after every reconnect. Its allocation must be
+    // rebuilt from the replicas still placed on it, never reset to zero,
+    // otherwise the scheduler would think the node is empty and overcommit it.
+    // An operator's Draining decision also survives the reconnect.
+    const allocation = this.db.getAllocationForNode(nodeName);
     this.db.upsertNode({
       name: nodeName,
       cpuCapacity: cpuCapacity || 2000,
       memCapacity: memCapacity || 2048,
-      cpuAllocated: 0,
-      memAllocated: 0,
-      status: 'Ready',
+      cpuAllocated: allocation.cpu,
+      memAllocated: allocation.mem,
+      status: existing?.status === 'Draining' ? 'Draining' : 'Ready',
       lastHeartbeatAt: Date.now(),
     });
 
-    this.db.addEvent('NodeReady', `node/${nodeName}`,
-      `Node registered with ${cpuCapacity}m CPU, ${memCapacity}Mi memory`);
+    this.db.addEvent('NodeReady', `node/${nodeName}`, existing
+      ? `Node re-registered (${allocation.cpu}m CPU, ${allocation.mem}Mi allocated)`
+      : `Node registered with ${cpuCapacity}m CPU, ${memCapacity}Mi memory`);
 
     callback(null, { accepted: true, message: `Node ${nodeName} registered` });
   }
@@ -112,7 +129,9 @@ export class GrpcServer {
     call.on('data', (request: any) => {
       nodeName = request.nodeName || nodeName;
 
-      if (nodeName && !this.agentStreams.has(nodeName)) {
+      // Always point at the newest stream for this node: after a reconnect
+      // the old stream may still be registered here until it errors out.
+      if (nodeName && this.agentStreams.get(nodeName) !== call) {
         this.agentStreams.set(nodeName, call);
         log.info('Agent stream connected', { node: nodeName });
       }
@@ -124,6 +143,7 @@ export class GrpcServer {
         exitCode: c.exitCode || 0,
         healthCheck: c.healthCheck || false,
         restartCount: c.restartCount || 0,
+        generation: c.generation || 0,
       }));
 
       const used = request.used || { cpuUsed: 0, memUsed: 0 };
@@ -131,20 +151,22 @@ export class GrpcServer {
       this.reconciler.processHeartbeat(nodeName, containers, used);
     });
 
-    call.on('end', () => {
-      if (nodeName) {
-        log.warn('Agent stream disconnected', { node: nodeName });
+    // Only forget this node's stream if it is still the current one; a late
+    // error from a previous connection must not remove the new connection.
+    const forget = (why: string, detail?: string) => {
+      if (nodeName && this.agentStreams.get(nodeName) === call) {
+        log.warn(`Agent stream ${why}`, { node: nodeName, error: detail });
         this.agentStreams.delete(nodeName);
       }
+    };
+
+    call.on('end', () => {
+      forget('disconnected');
       call.end();
     });
 
-    call.on('error', (err: Error) => {
-      if (nodeName) {
-        log.warn('Agent stream error', { node: nodeName, error: err.message });
-        this.agentStreams.delete(nodeName);
-      }
-    });
+    call.on('error', (err: Error) => forget('error', err.message));
+    call.on('cancelled', () => forget('cancelled'));
   }
 
   private handleListContainers(
@@ -164,6 +186,7 @@ export class GrpcServer {
         exitCode: 0,
         healthCheck: r.ready,
         restartCount: r.restartCount,
+        generation: r.generation,
       }));
 
     callback(null, { containers });

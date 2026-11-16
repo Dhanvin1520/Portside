@@ -27,11 +27,11 @@ jobs:
       - name: Type Check & Build
         run: npm run build
 
-      - name: Unit Tests
+      - name: Unit & Regression Tests
         run: npm run test:unit
 
       - name: Property-Based Verification (fast-check)
         run: npm run test:property
 
-      - name: Chaos Verification
-        run: npm run chaos
+      - name: Simulated Cluster Tests (real control plane + agents, fake containers)
+        run: npm run test:integration
