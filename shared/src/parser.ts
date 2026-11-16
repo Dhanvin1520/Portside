@@ -70,7 +70,7 @@ function validateDeployment(obj: any, errors: string[]): void {
     return;
   }
 
-  if (typeof obj.spec.replicas !== 'number' || obj.spec.replicas < 0) {
+  if (!isNonNegativeInt(obj.spec.replicas)) {
     errors.push('spec.replicas must be a non-negative integer');
   }
 
@@ -86,6 +86,9 @@ function validateDeployment(obj: any, errors: string[]): void {
   for (const c of containers) {
     if (!c.name) errors.push('Container missing name');
     if (!c.image) errors.push('Container missing image');
+    if (c.args !== undefined && (!Array.isArray(c.args) || c.args.some((a: unknown) => typeof a !== 'string'))) {
+      errors.push(`Container ${c.name || '?'}: args must be a list of strings`);
+    }
   }
 
   // Validate strategy if present
@@ -95,11 +98,17 @@ function validateDeployment(obj: any, errors: string[]): void {
       errors.push(`Unsupported strategy type: ${s.type}`);
     }
     if (s.rollingUpdate) {
-      if (s.rollingUpdate.maxSurge !== undefined && (typeof s.rollingUpdate.maxSurge !== 'number' || s.rollingUpdate.maxSurge < 0)) {
+      const { maxSurge, maxUnavailable } = s.rollingUpdate;
+      if (maxSurge !== undefined && !isNonNegativeInt(maxSurge)) {
         errors.push('strategy.rollingUpdate.maxSurge must be a non-negative integer');
       }
-      if (s.rollingUpdate.maxUnavailable !== undefined && (typeof s.rollingUpdate.maxUnavailable !== 'number' || s.rollingUpdate.maxUnavailable < 0)) {
+      if (maxUnavailable !== undefined && !isNonNegativeInt(maxUnavailable)) {
         errors.push('strategy.rollingUpdate.maxUnavailable must be a non-negative integer');
+      }
+      // With both at 0 a rollout can neither add a new replica nor remove an
+      // old one, so it would never make progress (Kubernetes rejects this too).
+      if ((maxSurge ?? 1) === 0 && (maxUnavailable ?? 1) === 0) {
+        errors.push('strategy.rollingUpdate.maxSurge and maxUnavailable cannot both be 0');
       }
     }
   }
@@ -123,6 +132,10 @@ function validateService(obj: any, errors: string[]): void {
     if (!p.port) errors.push('Port missing port number');
     if (!p.targetPort) errors.push('Port missing targetPort');
   }
+}
+
+function isNonNegativeInt(v: unknown): boolean {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0;
 }
 
 // ── Resource parsing ─────────────────────────────────────────────────────────

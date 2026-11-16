@@ -52,6 +52,7 @@ export interface DeploymentSpec {
 export interface ContainerSpec {
   name: string;
   image: string;
+  args?: string[];
   ports?: { containerPort: number }[];
   resources?: {
     requests?: { cpu?: string; memory?: string };
@@ -109,6 +110,13 @@ export interface Replica {
   hostPort: number;
   lastStateChange: number;  // epoch ms
   nextRestartAt?: number;   // epoch ms, for backoff
+  /**
+   * Placement generation. Incremented every time the control plane issues a
+   * start for this replica (first placement, crash restart, reschedule).
+   * Agents echo it back, which lets the control plane discard reports about
+   * stale container instances (a simple fencing token).
+   */
+  generation: number;
   image: string;
   cpuRequest: number;       // millicores
   memRequest: number;       // MiB
@@ -134,6 +142,8 @@ export interface Deployment {
     maxSurge: number;
     maxUnavailable: number;
   };
+  /** Last revision for which a RolloutCompleted event was emitted. */
+  completedRevision?: number;
 }
 
 // ── Service (stored state) ───────────────────────────────────────────────────
@@ -185,6 +195,7 @@ export interface GrpcContainerStatus {
   exitCode: number;
   healthCheck: boolean;
   restartCount: number;
+  generation: number;
 }
 
 export interface GrpcHeartbeat {
@@ -203,6 +214,8 @@ export interface GrpcStartContainer {
   healthPath: string;
   healthPort: number;
   healthIntervalMs: number;
+  generation: number;
+  args: string[];
 }
 
 export interface GrpcStopContainer {

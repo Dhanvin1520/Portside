@@ -61,7 +61,8 @@ export class StateDB {
         desired_replicas INTEGER NOT NULL,
         selector_json TEXT NOT NULL,
         max_surge INTEGER NOT NULL DEFAULT 1,
-        max_unavailable INTEGER NOT NULL DEFAULT 1
+        max_unavailable INTEGER NOT NULL DEFAULT 1,
+        completed_revision INTEGER NOT NULL DEFAULT 0
       );
 
       CREATE TABLE IF NOT EXISTS revisions (
@@ -88,6 +89,7 @@ export class StateDB {
         image TEXT NOT NULL,
         cpu_request INTEGER NOT NULL DEFAULT 100,
         mem_request INTEGER NOT NULL DEFAULT 128,
+        generation INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (deployment) REFERENCES deployments(name) ON DELETE CASCADE
       );
 
@@ -112,6 +114,18 @@ export class StateDB {
       CREATE INDEX IF NOT EXISTS idx_events_time ON events(time);
       CREATE INDEX IF NOT EXISTS idx_events_object ON events(object);
     `);
+
+    // Lightweight migrations for databases created by older versions.
+    this.ensureColumn('deployments', 'completed_revision', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('replicas', 'generation', 'INTEGER NOT NULL DEFAULT 0');
+  }
+
+  private ensureColumn(table: string, column: string, ddl: string): void {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+    if (!cols.some(c => c.name === column)) {
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+      log.info('Migrated schema', { table, column });
+    }
   }
 
   // ── Nodes ────────────────────────────────────────────────────────────────
@@ -147,9 +161,27 @@ export class StateDB {
     this.db.prepare('UPDATE nodes SET status = ? WHERE name = ?').run(status, name);
   }
 
+  /**
+   * Record a heartbeat. A NotReady node becomes Ready again, but a Draining
+   * node stays Draining: an operator decision must not be undone by the
+   * node simply being alive.
+   */
   updateNodeHeartbeat(name: string, ts: number): void {
-    this.db.prepare('UPDATE nodes SET last_heartbeat_at = ?, status = ? WHERE name = ?')
-      .run(ts, 'Ready', name);
+    this.db.prepare(`
+      UPDATE nodes SET
+        last_heartbeat_at = ?,
+        status = CASE WHEN status = 'NotReady' THEN 'Ready' ELSE status END
+      WHERE name = ?
+    `).run(ts, name);
+  }
+
+  /** Sum of CPU / memory requests of every non-terminated replica placed on a node. */
+  getAllocationForNode(name: string): { cpu: number; mem: number } {
+    const row = this.db.prepare(`
+      SELECT COALESCE(SUM(cpu_request), 0) AS cpu, COALESCE(SUM(mem_request), 0) AS mem
+      FROM replicas WHERE node = ? AND state != 'Terminated'
+    `).get(name) as any;
+    return { cpu: Number(row.cpu), mem: Number(row.mem) };
   }
 
   updateNodeAllocations(name: string, cpuAllocated: number, memAllocated: number): void {
@@ -207,7 +239,13 @@ export class StateDB {
       desiredReplicas: row.desired_replicas,
       selector: JSON.parse(row.selector_json),
       strategy: { maxSurge: row.max_surge, maxUnavailable: row.max_unavailable },
+      completedRevision: row.completed_revision ?? 0,
     };
+  }
+
+  markRolloutComplete(name: string, revision: number): void {
+    this.db.prepare('UPDATE deployments SET completed_revision = ? WHERE name = ?')
+      .run(revision, name);
   }
 
   // ── Revisions ────────────────────────────────────────────────────────────
@@ -254,14 +292,16 @@ export class StateDB {
   insertReplica(replica: Replica): void {
     this.db.prepare(`
       INSERT INTO replicas (id, deployment, revision, node, state, restart_count, ready,
-        container_port, host_port, last_state_change, next_restart_at, image, cpu_request, mem_request)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        container_port, host_port, last_state_change, next_restart_at, image, cpu_request, mem_request,
+        generation)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       replica.id, replica.deploymentName, replica.revision,
       replica.node, replica.state, replica.restartCount, replica.ready ? 1 : 0,
       replica.containerPort, replica.hostPort,
       replica.lastStateChange, replica.nextRestartAt || null,
-      replica.image, replica.cpuRequest, replica.memRequest
+      replica.image, replica.cpuRequest, replica.memRequest,
+      replica.generation ?? 0
     );
   }
 
@@ -271,14 +311,14 @@ export class StateDB {
         node = ?, state = ?, restart_count = ?, ready = ?,
         container_port = ?, host_port = ?,
         last_state_change = ?, next_restart_at = ?,
-        image = ?, cpu_request = ?, mem_request = ?, revision = ?
+        image = ?, cpu_request = ?, mem_request = ?, revision = ?, generation = ?
       WHERE id = ?
     `).run(
       replica.node, replica.state, replica.restartCount, replica.ready ? 1 : 0,
       replica.containerPort, replica.hostPort,
       replica.lastStateChange, replica.nextRestartAt || null,
       replica.image, replica.cpuRequest, replica.memRequest,
-      replica.revision, replica.id
+      replica.revision, replica.generation ?? 0, replica.id
     );
   }
 
@@ -297,12 +337,25 @@ export class StateDB {
       .all(node) as any[]).map(this.rowToReplica);
   }
 
+  getReplicasByState(state: ReplicaState): Replica[] {
+    return (this.db.prepare('SELECT * FROM replicas WHERE state = ?')
+      .all(state) as any[]).map(this.rowToReplica);
+  }
+
   getAllReplicas(): Replica[] {
     return (this.db.prepare('SELECT * FROM replicas').all() as any[]).map(this.rowToReplica);
   }
 
   deleteReplica(id: string): void {
     this.db.prepare('DELETE FROM replicas WHERE id = ?').run(id);
+  }
+
+  /** Garbage-collect replicas that have been Terminated for a while. */
+  deleteTerminatedReplicasBefore(ts: number): number {
+    const res = this.db.prepare(
+      "DELETE FROM replicas WHERE state = 'Terminated' AND last_state_change < ?"
+    ).run(ts) as any;
+    return Number(res?.changes ?? 0);
   }
 
   private rowToReplica(row: any): Replica {
@@ -321,6 +374,7 @@ export class StateDB {
       image: row.image,
       cpuRequest: row.cpu_request,
       memRequest: row.mem_request,
+      generation: row.generation ?? 0,
     };
   }
 
@@ -389,8 +443,19 @@ export class StateDB {
 
   // ── Transactions ─────────────────────────────────────────────────────────
 
+  private txDepth = 0;
+
+  /**
+   * Run fn atomically. Nested calls join the outer transaction, so helpers
+   * can use transaction() without caring whether a caller already opened one.
+   */
   transaction<T>(fn: () => T): T {
-    this.db.exec('BEGIN');
+    if (this.txDepth > 0) {
+      this.txDepth++;
+      try { return fn(); } finally { this.txDepth--; }
+    }
+    this.db.exec('BEGIN IMMEDIATE');
+    this.txDepth = 1;
     try {
       const result = fn();
       this.db.exec('COMMIT');
@@ -398,6 +463,8 @@ export class StateDB {
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
+    } finally {
+      this.txDepth = 0;
     }
   }
 

@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
+# A node container that was killed and started again keeps stale pid files,
+# which stop dockerd from starting. Remove them first.
+rm -f /var/run/docker.pid /var/run/docker/containerd/containerd.pid
+
 # Start Docker daemon in background
 dockerd-entrypoint.sh dockerd &
 

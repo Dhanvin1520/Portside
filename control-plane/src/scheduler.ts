@@ -101,17 +101,20 @@ export class Scheduler {
    * Used during control plane recovery.
    */
   recalculateAllocations(): void {
-    const nodes = this.db.getAllNodes();
-    for (const node of nodes) {
-      const replicas = this.db.getReplicasOnNode(node.name);
-      const activeReplicas = replicas.filter(
-        r => !['Terminated', 'Terminating'].includes(r.state)
-      );
-      const cpuAllocated = activeReplicas.reduce((sum, r) => sum + r.cpuRequest, 0);
-      const memAllocated = activeReplicas.reduce((sum, r) => sum + r.memRequest, 0);
-      this.db.updateNodeAllocations(node.name, cpuAllocated, memAllocated);
+    for (const node of this.db.getAllNodes()) {
+      this.recalculateNode(node.name);
     }
     log.info('Recalculated node allocations');
+  }
+
+  /**
+   * Rebuild one node's allocation from the replicas placed on it.
+   * Terminating replicas still count: their containers are still running
+   * until the stop is issued, and release() subtracts them at that point.
+   */
+  recalculateNode(nodeName: string): void {
+    const { cpu, mem } = this.db.getAllocationForNode(nodeName);
+    this.db.updateNodeAllocations(nodeName, cpu, mem);
   }
 
   // ── Scoring ──────────────────────────────────────────────────────────────

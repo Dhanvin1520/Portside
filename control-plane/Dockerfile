@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.base.json ./
@@ -10,7 +10,7 @@ RUN npm install
 RUN npm run build --workspace=shared
 RUN npm run build --workspace=control-plane
 
-FROM node:20-alpine
+FROM node:22-alpine
 WORKDIR /app
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/proto/ ./proto/

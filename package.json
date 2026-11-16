@@ -24,6 +24,7 @@
     "test": "npm run test:unit",
     "test:unit": "cd tests && npx vitest run --config vitest.unit.config.ts",
     "test:property": "cd tests && npx vitest run --config vitest.unit.config.ts property/",
+    "test:integration": "cd tests && npx vitest run --config vitest.integration.config.ts",
     "chaos": "cd tests && npx tsx chaos/chaos.ts",
     "clean": "rm -rf node_modules dist coverage data/*.db"
   },
@@ -34,6 +35,6 @@
     "tsx": "^4.7.0"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.5.0"
   }
 }

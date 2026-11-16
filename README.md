@@ -43,30 +43,38 @@ graph TD
 
 ```
 ├── agent/            # Node agent managing local Docker containers via Dockerode
-├── cli/              # portctl CLI tool (apply, get, scale, rollout, drain)
+├── cli/              # portctl CLI tool (apply, get, scale, rollout, drain, uncordon)
 ├── control-plane/    # Central orchestrator: scheduler, reconciler, REST API, SQLite
 ├── dashboard/        # Web UI for real-time cluster visualization
 ├── examples/         # Sample multi-replica application deployment YAMLs
 ├── proto/            # gRPC protocol buffer definitions (agent.proto)
 ├── proxy/            # Health-aware reverse proxy & round-robin load balancer
 ├── shared/           # Shared types, logging utilities, and declarative YAML parser
-└── tests/            # Vitest unit tests, fast-check property verification, chaos harness
+└── tests/            # Unit + regression tests, fast-check properties, simulated cluster, chaos harness
 ```
 
 ---
 
-## 📊 Chaos Engineering & Non-Functional Benchmarks
+## 📊 Resilience Testing & Benchmarks
 
-Every metric is measured across repeated runs via `npm run chaos` (`tests/chaos/chaos.ts`) on a 3-node cluster:
+Portside is verified at two levels.
 
-| Scenario / Metric | Target | Measured (Median) | Measured (Worst Case) | Result |
-| :--- | :--- | :--- | :--- | :---: |
-| **Crashed container back to ready** | `< 5.0 s` | **2.21 s** | **2.40 s** | ✅ PASS |
-| **Node failure to full capacity** | `< 5.0 s` | **3.94 s** | **4.12 s** | ✅ PASS |
-| **Failed requests during 10-replica rollout** | `0 failed` | **0 / 2,500** | **0 / 2,500** | ✅ PASS |
-| **Control plane restart recovery** | `< 2.0 s (0 restarts)` | **1.65 s (0 restarts)** | **1.82 s** | ✅ PASS |
-| **Scheduling latency per replica** | `< 50 ms` | **4.8 ms** | **12.4 ms** | ✅ PASS |
-| **Duplicate containers after reconnect** | `0` | **0** | **0** | ✅ PASS |
+**1. Simulated cluster test** (`npm run test:integration`, runs in CI on every push). It runs the real control plane (SQLite, scheduler, reconcile loop, gRPC, REST) and three real agents (registration, heartbeat stream, reconnect loop) in one process. Only Docker is replaced by an in-memory runtime, so containers start instantly. Measured on a laptop:
+
+| Scenario | Measured | Asserted |
+| :--- | :--- | :--- |
+| Crashed container back to ready | ~4.0 s | < 5 s, counted as exactly 1 restart |
+| Node failure: replicas rescheduled | ~4.0 s | < 5 s |
+| Node failure: all replicas ready again | ~5.0 s | reported |
+| Rolling update, 6 replicas | ~12.5 s | maxSurge / maxUnavailable never violated (sampled every 25 ms) |
+| Node rejoins after failure: stale copies stopped | ~0.1-0.2 s | 0 duplicate containers |
+| Control plane restart: agents reconnected | ~1.0-1.5 s | 0 containers restarted, 0 nodes marked NotReady |
+
+These timings measure the orchestration logic only. Real container start-up and image pulls come on top.
+
+**2. Live chaos harness** (`npm run chaos`, `tests/chaos/chaos.ts`) against the real 3-node docker-compose cluster. It kills app containers, hard-stops worker nodes, partitions a node off the network, SIGKILLs the control plane, and runs rollouts, a rollback and a re-apply under steady HTTP load through the proxy. Every number is measured: there are no fallback values, a missed target is reported as FAIL with a non-zero exit code, and results are written to `tests/chaos/results/latest.{json,md}`.
+
+Run it locally after `docker compose up -d --build`, or start the **Portside Chaos (live cluster)** workflow from the GitHub Actions tab, which boots the cluster on a runner and uploads the results.
 
 ---
 
@@ -74,7 +82,7 @@ Every metric is measured across repeated runs via `npm run chaos` (`tests/chaos/
 
 ### 1. Prerequisites
 - Docker & Docker Compose
-- Node.js `>= 20.0.0`
+- Node.js `>= 22.5.0` (the control plane uses the built-in `node:sqlite`)
 - `npm`
 
 ### 2. Boot the Entire Cluster
@@ -117,7 +125,17 @@ portctl get replicas
 portctl describe web-app
 ```
 
-### 5. Access the Web Dashboard
+### 5. Send Traffic and Roll Out a New Version
+```bash
+# The proxy load-balances across ready replicas of the web-app Service
+curl localhost:8080          # -> portside v1
+
+# Zero-downtime rolling update (maxSurge=1, maxUnavailable=1), then roll back
+portctl apply -f examples/web-app/deployment-v2.yaml
+portctl rollout undo web-app
+```
+
+### 6. Access the Web Dashboard
 Open [http://localhost:3000](http://localhost:3000) in your browser for a live graphical view of node resource allocations, container health, and real-time audit event streams.
 
 ---
@@ -129,24 +147,32 @@ Traditional event-driven systems emit discrete messages on changes (e.g. `Contai
 **Portside adopts Kubernetes' level-triggered reconciliation pattern:**
 1. **Desired State:** Stored declaratively in SQLite (`deployments`, `revisions`).
 2. **Observed State:** Aggregated every 1,000 ms via bidirectional gRPC heartbeats from node agents.
-3. **Pure Diff Function:** In every tick, `Reconciler.step()` calculates `Diff(Desired, Observed)`:
+3. **Pure Diff Function:** In every tick, `Reconciler.tick()` calculates `Diff(Desired, Observed)`:
    - If `actualReplicas < desiredReplicas`: scheduler assigns pending replicas to the least-loaded nodes.
    - If `actualReplicas > desiredReplicas`: surplus replicas are gracefully drained.
    - If `containerStatus == CRASHED`: exponential crash backoff restarts the container.
    - If `heartbeatAge > 3000 ms`: the node is marked `NotReady`, and its replicas are immediately evicted and rescheduled onto healthy nodes.
+   - If a start command was lost: replicas the agent never reported are re-sent their start after 10 s (agents treat repeated starts as no-ops).
+
+**Fencing.** Every placement of a replica gets a new *generation* number that the agent echoes back in heartbeats. The control plane ignores reports about older container instances, and tells a node to stop any copy of a replica that is now assigned elsewhere. This is what removes duplicate containers after a node comes back from a crash or a network partition.
+
+**Surviving control plane restarts.** All state lives in SQLite (WAL mode). Agents keep their containers running and reconnect with exponential backoff and jitter, and the control plane waits a 5 s grace period before declaring any node dead, so a restart does not reschedule anything.
 
 ---
 
 ## 🧪 Testing Suite
 
 ```bash
-# Run unit tests (Parser, Scheduler, Reconciler, Rollout)
+# Run unit and regression tests (Parser, Scheduler, Reconciler, Rollout, API)
 npm run test:unit
 
-# Run fast-check property tests (Thousands of random specs verifying 0 overcommit)
+# Run fast-check property tests (random clusters and workloads, verifying 0 overcommit)
 npm run test:property
 
-# Run end-to-end chaos benchmarks
+# Run the simulated 3-node cluster test (real control plane and agents, fake containers)
+npm run test:integration
+
+# Run the live chaos harness (needs: docker compose up -d --build)
 npm run chaos
 ```
 
